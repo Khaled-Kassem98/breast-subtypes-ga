@@ -1,0 +1,17 @@
+pyyaml
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+umap-learn
+statsmodels
+GEOparse
+scikit-learn-extra
+sklearn-genetic-opt
+deap
+joblib
+tqdm
+gseapy     # optional: pathway enrichment
+lxml       # safer MINiML parsing
+requests

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GSE45827 • GA Feature Selection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.datatables.net/2.0.7/css/dataTables.dataTables.min.css" rel="stylesheet">
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:0;padding:16px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .grid{display:grid;grid-template-columns:300px 1fr;gap:16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:12px}
+    label{display:block;font-size:14px;margin:6px 0 2px}
+    input,select{width:100%;padding:6px;border:1px solid #ccc;border-radius:8px}
+    button{padding:8px 12px;border:1px solid #444;border-radius:8px;background:#111;color:#fff;cursor:pointer}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+    #heat{height:540px}
+    .mono{font-family:ui-monospace,Consolas,monospace}
+  </style>
+</head>
+<body>
+<header>
+  <h2>GSE45827 · GA Feature Selection</h2>
+  <a href="https://github.com/YOUR_USER/YOUR_REPO" target="_blank">Repo</a>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <h3>Controls</h3>
+    <label>Population size</label><input id="pop" type="number" value="80" min="10" step="5">
+    <label>Generations</label><input id="gens" type="number" value="40" min="5" step="5">
+    <div class="row">
+      <div style="flex:1">
+        <label>Crossover prob</label><input id="cx" type="number" value="0.8" min="0" max="1" step="0.05">
+      </div>
+      <div style="flex:1">
+        <label>Mutation prob</label><input id="mut" type="number" value="0.05" min="0" max="1" step="0.01">
+      </div>
+    </div>
+    <label>Pick genes (hold Ctrl/⌘ for multi-select)</label>
+    <select id="genes" multiple size="10"></select>
+    <div class="row" style="margin-top:8px">
+      <button id="btnHeat">Show heatmap</button>
+      <button id="btnTable">Show table</button>
+    </div>
+    <p class="mono" id="status"></p>
+    <hr>
+    <p><b>Run GA:</b> GitHub Pages is static. Trigger the GA workflow from the repo
+    “Actions” tab with the parameters above. This page will load the newest results JSON.</p>
+  </div>
+
+  <div class="card">
+    <div id="heat"></div>
+    <table id="table" class="display" style="width:100%;display:none"></table>
+  </div>
+</div>
+
+<hr>
+<div class="card">
+  <h3>Latest results</h3>
+  <pre id="results" class="mono" style="white-space:pre-wrap"></pre>
+</div>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

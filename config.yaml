@@ -1,0 +1,25 @@
+seed: 42
+gse: GSE45827
+platform: GPL570
+use_series_matrix: true
+allow_download: true
+classes: [Basal, HER2, LumA, LumB]
+split: {train: 0.6, val: 0.2, test: 0.2}
+baseline_top_k: 2000
+model: logreg_l2
+model_cv_folds: 5
+ga:
+  estimator: "logreg_en"
+  population_size: 80
+  generations: 40
+  crossover_prob: 0.8
+  mutation_prob: 0.05
+  cv_folds: 5
+  scoring: "f1_macro"
+  k_features: 300
+
+paths:
+  raw: "data/raw"
+  interim: "data/interim"
+  processed: "data/processed"
+  results: "results"
