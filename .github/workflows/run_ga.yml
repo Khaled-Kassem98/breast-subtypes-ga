@@ -3,41 +3,76 @@ on:
   workflow_dispatch:
     inputs:
       population_size: {type: number, default: 80}
-      generations: {type: number, default: 40}
-      crossover_prob: {type: number, default: 0.8}
-      mutation_prob: {type: number, default: 0.05}
+      generations:     {type: number, default: 40}
+      crossover_prob:  {type: number, default: 0.8}
+      mutation_prob:   {type: number, default: 0.05}
 
 jobs:
-  ga:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.10'}
+        with: { python-version: '3.10' }
       - run: pip install -r requirements.txt
-      - name: Patch config
-        run: |
-          python - <<'PY'
-          import yaml,sys
-          cfg=yaml.safe_load(open("config.yaml","r",encoding="utf-8"))
-          g=cfg["ga"]
-          ip = "${{ github.event.inputs.population_size }}"; g["population_size"]=int(float(ip))
-          ig = "${{ github.event.inputs.generations }}"; g["generations"]=int(float(ig))
-          ic = "${{ github.event.inputs.crossover_prob }}"; g["crossover_prob"]=float(ic)
-          im = "${{ github.event.inputs.mutation_prob }}"; g["mutation_prob"]=float(im)
-          open("config.yaml","w",encoding="utf-8").write(yaml.safe_dump(cfg,sort_keys=False))
-          print("patched",cfg["ga"])
-          PY
-      - name: Download needed GEO files (cached locally in repo data/raw)
+
+      # Fetch GEO inputs required by steps 01–02
+      - name: Download GEO files
         run: |
           mkdir -p data/raw
-          # assume you already committed small files or they exist via actions cache
-      - name: Run GA step
-        run: python -c "from src.utils import load_cfg; import src.step06_GA_feature_selection as m; c=load_cfg('config.yaml'); print(m.run(c,c['paths']))"
+          curl -L -o data/raw/GSE45827_series_matrix.txt.gz https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/matrix/GSE45827_series_matrix.txt.gz
+          curl -L -o data/raw/GSE45827_family.soft.gz        https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/soft/GSE45827_family.soft.gz
+          curl -L -o data/raw/GPL570.annot.gz                https://ftp.ncbi.nlm.nih.gov/geo/platforms/GPLnnn/GPL570/annot/GPL570.annot.gz
+
+      - name: Patch GA params in config
+        run: |
+          python - <<'PY'
+          import yaml, sys
+          with open("config.yaml","r",encoding="utf-8") as f: cfg = yaml.safe_load(f)
+          g = cfg["ga"]
+          g["population_size"] = int(float("${{ github.event.inputs.population_size || 80 }}"))
+          g["generations"]     = int(float("${{ github.event.inputs.generations     || 40 }}"))
+          g["crossover_prob"]  = float("${{ github.event.inputs.crossover_prob     || 0.8 }}")
+          g["mutation_prob"]   = float("${{ github.event.inputs.mutation_prob      || 0.05 }}")
+          cfg["allow_download"] = False
+          with open("config.yaml","w",encoding="utf-8") as f: yaml.safe_dump(cfg,f,sort_keys=False)
+          PY
+
+      - name: Run steps 01–05
+        run: |
+          python - <<'PY'
+          from src.utils import load_cfg
+          import src.step01_reading_data as s1, src.step02_preprocessing as s2
+          import src.step03_cohort as s3, src.step04_split as s4, src.step05_baseline as s5
+          c = load_cfg('config.yaml'); P = c['paths']
+          print("S1", s1.run(c,P)); print("S2", s2.run(c,P))
+          print("S3", s3.run(c,P)); print("S4", s4.run(c,P)); print("S5", s5.run(c,P))
+          PY
+
+      - name: Run GA + model selection (steps 06–07)
+        run: |
+          python - <<'PY'
+          from src.utils import load_cfg
+          import src.step06_GA_feature_selection as s6, src.step07_model_selection as s7
+          c = load_cfg('config.yaml'); P = c['paths']
+          print("S6", s6.run(c,P));   print("S7", s7.run(c,P))
+          PY
+
       - name: Export web JSON
         run: python tools/prepare_web.py
-      - name: Publish to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs
+
+      # Publish docs/ via GitHub Pages (Actions)
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with: { path: docs }
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
