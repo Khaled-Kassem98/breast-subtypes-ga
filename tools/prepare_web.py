@@ -1,35 +1,38 @@
 # tools/prepare_web.py
 from pathlib import Path
-import sys,json, pandas as pd, numpy as np
+import sys,json, pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.utils import load_cfg, read_matrix
 
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs" / "data"
+DOCS.mkdir(parents=True, exist_ok=True)
+
 cfg = load_cfg("config.yaml")
-P = {k:Path(v) for k,v in cfg["paths"].items()}
-DOCS = Path("docs"); (DOCS/"data").mkdir(parents=True, exist_ok=True)
+P = cfg["paths"]
 
-# matrix preview: top-variance 200 genes × all GSM
-X = read_matrix(str(P["processed"]/ "X_cohort.tsv.gz"))   # genes × gsm
-y = pd.read_csv(P["processed"]/ "y.tsv", sep="\t").drop_duplicates("gsm").set_index("gsm")["label"]
+# matrix (limit rows to keep file small in browser)
+X = read_matrix(Path(P["processed"]) / "X.tsv.gz")
+genes = X.index.tolist()
+gsms  = X.columns.tolist()
 
-var = X.var(axis=1).sort_values(ascending=False)
-genes = var.index[:200]
-Xv = X.loc[genes]
-Xv = ((Xv - Xv.mean(1).values.reshape(-1,1)) / Xv.std(1).replace(0,1).values.reshape(-1,1)).clip(-3,3)
+topn = 200  # keep
+Xv = X.var(axis=1).sort_values(ascending=False).head(topn).index
+Xsub = X.loc[Xv]
 
-# write compact columnar JSON
-(Xv.T.reset_index().rename(columns={"index":"gsm"})
-    .to_json(DOCS/"data"/"Xv.json", orient="records"))
-pd.Series(genes, name="gene").to_json(DOCS/"data"/"genes.json", orient="values")
-y.to_json(DOCS/"data"/"labels.json", orient="index")
+with open(DOCS / "matrix.json", "w", encoding="utf-8") as f:
+    json.dump({
+        "genes": Xsub.index.tolist(),
+        "gsms": gsms,
+        "X": Xsub.values.tolist()
+    }, f)
 
-# GA + model results (if present)
-out = {}
-for p in ["results/baseline/compare_step05_vs_step07.tsv",
-          "data/processed/ga_selection_frequency.tsv"]:
-    q = Path(p)
-    if q.exists():
-        out[q.name] = pd.read_csv(q, sep="\t").to_dict(orient="list")
-(Path(DOCS/"data"/"manifest.json")).write_text(json.dumps(out), encoding="utf-8")
-print("Wrote docs/data/*.json")
+# labels for supervised view
+y = pd.read_csv(Path(P["processed"]) / "y.tsv", sep="\t", index_col=0).iloc[:, 0]
+y = y.reindex(gsms).fillna("NA").astype(str)
+with open(DOCS / "labels.json", "w", encoding="utf-8") as f:
+    json.dump({"labels": y.tolist()}, f)
+
+# latest results (baseline+ga) placeholder if not produced yet
+(DOCS / "results.json").write_text("{}", encoding="utf-8")
