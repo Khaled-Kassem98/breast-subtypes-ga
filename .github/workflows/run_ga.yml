@@ -1,16 +1,17 @@
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 name: run-ga
 on:
   workflow_dispatch:
     inputs:
+      model:           {type: choice, options: [logreg_en, linsvc, rf], default: logreg_en}
       population_size: {type: number, default: 80}
       generations:     {type: number, default: 40}
       crossover_prob:  {type: number, default: 0.8}
       mutation_prob:   {type: number, default: 0.05}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -21,18 +22,17 @@ jobs:
         with: { python-version: '3.10' }
       - run: pip install -r requirements.txt
 
-      # Fetch GEO inputs required by steps 01–02
-      - name: Download GEO files
+      - name: Download GEO
         run: |
           mkdir -p data/raw
           curl -L -o data/raw/GSE45827_series_matrix.txt.gz https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/matrix/GSE45827_series_matrix.txt.gz
           curl -L -o data/raw/GSE45827_family.soft.gz        https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/soft/GSE45827_family.soft.gz
           curl -L -o data/raw/GPL570.annot.gz                https://ftp.ncbi.nlm.nih.gov/geo/platforms/GPLnnn/GPL570/annot/GPL570.annot.gz
 
-      - name: Patch GA params in config
+      - name: Patch config
         run: |
           python - <<'PY'
-          import yaml, sys
+          import yaml
           with open("config.yaml","r",encoding="utf-8") as f: cfg = yaml.safe_load(f)
           g = cfg["ga"]
           g["population_size"] = int(float("${{ github.event.inputs.population_size || 80 }}"))
@@ -43,30 +43,29 @@ jobs:
           with open("config.yaml","w",encoding="utf-8") as f: yaml.safe_dump(cfg,f,sort_keys=False)
           PY
 
-      - name: Run steps 01–05
+      - name: Run 01–07
         run: |
           python - <<'PY'
+          import json
           from src.utils import load_cfg
           import src.step01_reading_data as s1, src.step02_preprocessing as s2
           import src.step03_cohort as s3, src.step04_split as s4, src.step05_baseline as s5
-          c = load_cfg('config.yaml'); P = c['paths']
-          print("S1", s1.run(c,P)); print("S2", s2.run(c,P))
-          print("S3", s3.run(c,P)); print("S4", s4.run(c,P)); print("S5", s5.run(c,P))
-          PY
-
-      - name: Run GA + model selection (steps 06–07)
-        run: |
-          python - <<'PY'
-          from src.utils import load_cfg
           import src.step06_GA_feature_selection as s6, src.step07_model_selection as s7
           c = load_cfg('config.yaml'); P = c['paths']
-          print("S6", s6.run(c,P));   print("S7", s7.run(c,P))
+          r = {}
+          r["s1"]=s1.run(c,P); r["s2"]=s2.run(c,P); r["s3"]=s3.run(c,P); r["s4"]=s4.run(c,P); r["s5"]=s5.run(c,P)
+          r["s6"]=s6.run(c,P, k=300)  # keep K fixed for the site
+          r["s7"]=s7.run(c,P, model="${{ github.event.inputs.model }}")
+          print(json.dumps(r))
+          # write results for the site
+          import pathlib
+          out = pathlib.Path("docs/data"); out.mkdir(parents=True, exist_ok=True)
+          (out/"results.json").write_text(json.dumps(r, indent=2))
           PY
 
       - name: Export web JSON
         run: python tools/prepare_web.py
 
-      # Publish docs/ via GitHub Pages (Actions)
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with: { path: docs }
@@ -74,10 +73,6 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    permissions: { pages: write, id-token: write }
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
