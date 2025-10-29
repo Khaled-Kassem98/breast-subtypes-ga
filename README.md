@@ -34,57 +34,6 @@ Key outputs:
 * Files used:
   `GSE45827_series_matrix.txt.gz`, `GSE45827_family.soft.gz`, `GPL570.annot.gz`
 
-## Pipeline steps
-
-1. **step01_reading_data**
-   Read series matrix. Parse GSM metadata from SOFT. Save `X_raw.tsv.gz`, `metadata.tsv`, `gsm_order.tsv`.
-2. **step02_preprocessing**
-   Map probe→gene via GPL570 SOFT/annot. Collapse probes by median. Log2 check. Per-gene z-score. Save `X.tsv.gz`.
-3. **step03_cohort**
-   Build labels (Basal, HER2, LumA, LumB). Filter cohort. Align `X` and `y`.
-4. **step04_split**
-   Stratified train/val/test splits. Save `split_*.csv`.
-5. **step05_baseline**
-   Baselines: `logreg_en`, `linsvc`, `rf`. Evaluate on splits. Save metrics.
-6. **step06_GA_feature_selection**
-   GA over binary gene masks. Fitness = cross-val **f1_macro** of the estimator. Save `ga_mask_k300.tsv`, `ga_genes_k300.txt`, GA history.
-7. **step07_model_selection**
-   Train the chosen model on GA genes. CV for hyper-params. Report train/val/test and test-after-refit metrics. Write comparison TSV.
-8. **step08_bio_checks**
-   PAM50 overlap, simple marker checks, optional pathway enrichment (`gseapy`).
-9. **step09_unsupervised**
-   PCA/UMAP and clustering. Plots + silhouette where applicable.
-10. **step10_differential**
-    Simple DE per subtype vs rest. Volcano/heatmap and marker tables.
-
-## GA fitness
-
-* Objective: maximize **f1_macro** (K-fold CV as set in `config.yaml`).
-* Chromosome: binary vector over genes.
-* Operators: tournament selection, one/two-point crossover, bit-flip mutation.
-* Constraints: population size, generations, crossover and mutation probabilities come from config or workflow inputs.
-
-## Web site (GitHub Pages)
-
-Static UI under `docs/`:
-
-* Matrix viewer (top-variance subset) as heatmap or table.
-* Controls show chosen model and GA parameters.
-* Results panel reads `docs/data/results.json`.
-
-Build site data locally:
-
-```bash
-python tools/prepare_web.py
-# open docs/index.html
-```
-
-Deploy with GitHub Actions:
-
-* Workflow: `.github/workflows/run_ga.yml`
-* Settings → Pages → **Source: GitHub Actions**
-* Actions → **run-ga** → set inputs → Run
-  The job downloads GEO, runs steps 01–07, writes `docs/data/*.json`, and publishes Pages.
 
 ## Config
 
@@ -140,6 +89,73 @@ requirements.txt
 README.md
 ```
 
-Download family	Format
-SOFT formatted family file(s): https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/soft/
-GPL570.annot.gz: https://ftp.ncbi.nlm.nih.gov/geo/platforms/GPLnnn/GPL570/soft/
+## Notes
+
+* Keep `data/raw/`, `data/interim/`, `results/` out of git. Add exceptions only for small files.
+* For very large raw files use Actions download or Releases, not LFS.
+* All metrics are reproducible given the `seed` and fixed splits.
+
+
+## What it does
+
+* Loads GSE45827, parses GSM metadata, builds a labeled cohort.
+* Maps probes→genes (GPL570), collapses probes, z-scores genes.
+* Trains baselines, runs GA feature selection, then model selection.
+* Exports compact JSON for a web matrix/heatmap and metrics.
+
+
+## Pipeline (steps 01→10)
+
+| Step | Module                           | Purpose                                       | Key outputs                                     |
+| ---- | -------------------------------- | --------------------------------------------- | ----------------------------------------------- |
+| 01   | `step01_reading_data.py`         | Read series matrix, parse SOFT metadata       | `X_raw.tsv.gz`, `metadata.tsv`, `gsm_order.tsv` |
+| 02   | `step02_preprocessing.py`        | Probe→gene map, collapse, log2 check, z-score | `X.tsv.gz`                                      |
+| 03   | `step03_cohort.py`               | Build labels and cohort filters               | `X_cohort.tsv.gz`, `y.tsv`                      |
+| 04   | `step04_split.py`                | Stratified train/val/test                     | `split_train.csv` etc.                          |
+| 05   | `step05_baseline.py`             | Baselines (`logreg_en`, `linsvc`, `rf`)       | `results/baseline/*`                            |
+| 06   | `step06_GA_feature_selection.py` | GA over gene masks, CV scoring                | `ga_mask_k300.tsv`, `ga_genes_k300.txt`, GA log |
+| 07   | `step07_model_selection.py`      | Train chosen model on GA genes + CV           | `results/model_selection/*`, compare TSV        |
+| 08   | `step08_bio_checks.py`           | PAM50 overlap, simple enrichment              | JSON summary                                    |
+| 09   | `step09_unsupervised.py`         | PCA/UMAP + clustering                         | plots, scores                                   |
+| 10   | `step10_differential.py`         | Simple DE and visuals                         | tables, volcano/heatmap                         |
+
+## GA fitness
+
+* Chromosome: binary mask over genes.
+* Fitness: **macro-F1** from K-fold CV of the chosen estimator.
+* Operators: tournament selection, crossover, bit-flip mutation.
+* Params: population, generations, crossover prob, mutation prob.
+
+## Web UI (Pages)
+
+Static app under `docs/`:
+
+* Shows matrix (top-variance subset) as table or heatmap.
+* Displays selected model + GA params.
+* Loads metrics from `docs/data/results.json`.
+
+## Quick start (local)
+
+```bash
+# Python 3.10+
+pip install -r requirements.txt
+python main.py          # runs steps in order
+python tools/prepare_web.py  # writes docs/data/*.json
+# open docs/index.html in a browser
+```
+
+## Run on GitHub Actions
+
+* Workflow: `.github/workflows/run_ga.yml`
+* Settings → Pages → Source = **GitHub Actions**
+* Actions → **run-ga** → set inputs:
+
+  * `model`: `logreg_en` | `linsvc` | `rf`
+  * `population_size`, `generations`, `crossover_prob`, `mutation_prob`
+* The job downloads GEO, runs steps 01–07, writes `docs/data/results.json`, and publishes Pages.
+
+
+## Notes
+
+* `data/raw/`, `data/interim/`, `results/` are git-ignored. Large GEO files are fetched by the workflow.
+* Reproducibility via `seed` and fixed splits in `config.yaml`.
