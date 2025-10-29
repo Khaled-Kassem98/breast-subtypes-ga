@@ -22,7 +22,13 @@ except ImportError:
 
 
 # ---------- helpers ----------
-
+def _to_py(o):
+    if isinstance(o, (np.integer,)):   return int(o)
+    if isinstance(o, (np.floating,)):  return float(o)
+    if isinstance(o, (np.ndarray,)):   return o.tolist()
+    if isinstance(o, dict):            return {k: _to_py(v) for k,v in o.items()}
+    if isinstance(o, (list, tuple)):   return [_to_py(v) for v in o]
+    return o
 def _find_ga_genes_file(proc_dir: Path) -> Path:
     # Prefer explicit newest ga_genes_k*.txt
     cands = sorted(proc_dir.glob("ga_genes_k*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -67,7 +73,7 @@ def _estimator_and_grid(name: str, seed: int):
         return est, grid
     if name == "logreg_en":
         est = LogisticRegression(
-            penalty="l2", solver="lbfgs",
+            penalty="elasticnet", solver="saga",
             l1_ratio=0.5, max_iter=4000, n_jobs=1, random_state=seed
         )
         grid = {"C": [0.1, 0.5, 1.0, 3.0], "l1_ratio": [0.1, 0.5, 0.9]}
@@ -185,7 +191,7 @@ def run(cfg, paths, model: str | None = None, **_):
           .to_csv(outdir / f"{model_name}_{split_name}_cm.tsv", sep="\t")
         _plot_cm(cm, labels_order, f"{model_name} • {split_name}", outdir / f"{model_name}_{split_name}_cm.png")
         with open(outdir / f"{model_name}_{split_name}_report.json", "w", encoding="utf-8") as f:
-            json.dump(rep, f, indent=2)
+            json.dump(_to_py(rep), f, indent=2)
 
     # optional: refit on train+val, eval on test again
     Xtrva = np.vstack([Xtr, Xva])
@@ -196,7 +202,7 @@ def run(cfg, paths, model: str | None = None, **_):
       .to_csv(outdir / f"{model_name}_test_after_refit_cm.tsv", sep="\t")
     _plot_cm(cm2, labels_order, f"{model_name} • test (refit tr+val)", outdir / f"{model_name}_test_after_refit_cm.png")
     with open(outdir / f"{model_name}_test_after_refit_report.json", "w", encoding="utf-8") as f:
-        json.dump(rep2, f, indent=2)
+        json.dump(_to_py(rep2), f, indent=2)
 
     # predictions on test
     yhat = best.predict(Xte)
@@ -216,6 +222,7 @@ def run(cfg, paths, model: str | None = None, **_):
         "metrics": metrics,
         "test_after_refit": m2,
     }
-    (outdir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (outdir / "summary.json").write_text(json.dumps(_to_py(summary), indent=2), encoding="utf-8")
     return summary
+
 
