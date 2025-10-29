@@ -49,7 +49,7 @@ def _estimator(name: str, seed: int):
 
 # ---------- GA core ----------
 
-def run(cfg, paths):
+def run(cfg, paths,k=300):
     P = {k: Path(v) for k, v in paths.items()}
     ga_cfg = cfg.get("ga", {})
     seed = int(cfg.get("seed", 42))
@@ -206,3 +206,4 @@ def run(cfg, paths):
     (out_res / "ga_summary.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     return {"k": k, "best_score": best_score, "genes": len(best_genes)}
+
