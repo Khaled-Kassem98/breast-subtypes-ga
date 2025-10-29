@@ -137,7 +137,7 @@ def _plot_cm(cm, labels, title, out_png):
 
 # ---------- entrypoint ----------
 
-def run(cfg, paths):
+def run(cfg, paths, model: str | None = None, **_):
     P = {k: Path(v) for k, v in paths.items()}
     labels_order = cfg["classes"]
     seed = int(cfg.get("seed", 42))
@@ -157,7 +157,7 @@ def run(cfg, paths):
     Xte, yte, te_ids, _          = _slice(X, y, te_ids, genes_used)
 
     # model + grid
-    model_name = cfg.get("model", "logreg_l2")
+    model_name = model or cfg.get("model", "logreg_l2")
     est, grid = _estimator_and_grid(model_name, seed)
     scoring = cfg.get("ga", {}).get("scoring", "f1_macro")
     cv_folds = int(cfg.get("model_cv_folds", cfg.get("ga", {}).get("cv_folds", 5)))
@@ -218,3 +218,4 @@ def run(cfg, paths):
     }
     (outdir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
+
