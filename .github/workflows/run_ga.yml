@@ -64,7 +64,7 @@ jobs:
           R = {}
           R["s1"]=s1.run(c,P); R["s2"]=s2.run(c,P); R["s3"]=s3.run(c,P)
           R["s4"]=s4.run(c,P); R["s5"]=s5.run(c,P)
-          R["s6"]=s6.run(c,P, k=300)
+          R["s6"]=s6.run(c,P)
           R["s7"]=s7.run(c,P, model="${{ github.event.inputs.model }}")
           out = pathlib.Path("docs/data"); out.mkdir(parents=True, exist_ok=True)
           (out/"results.json").write_text(json.dumps(R, indent=2))
