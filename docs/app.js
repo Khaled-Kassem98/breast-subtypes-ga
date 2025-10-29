@@ -1,58 +1,92 @@
-const S = sel => document.querySelector(sel);
-let Xrows = [], genes = [], labels = {};
+async function loadJSON(p){ const r = await fetch(p,{cache:"no-store"}); return r.json(); }
 
-async function loadData(){
-  const [xj, gj, lj, mj] = await Promise.all([
-    fetch("data/Xv.json").then(r=>r.json()),
-    fetch("data/genes.json").then(r=>r.json()),
-    fetch("data/labels.json").then(r=>r.json()),
-    fetch("data/manifest.json").then(r=>r.json()).catch(()=>({}))
-  ]);
-  Xrows = xj; genes = gj; labels = lj;
-  // populate gene select
-  const gsel = S("#genes");
-  gsel.innerHTML = "";
-  genes.forEach(g=>{
-    const o = document.createElement("option");
-    o.value=g; o.textContent=g; gsel.appendChild(o);
-  });
-  S("#results").textContent = JSON.stringify(mj, null, 2);
-  S("#status").textContent = `Loaded ${genes.length} genes • ${Xrows.length} samples`;
+const els = {
+  model: document.getElementById('model'),
+  pop:   document.getElementById('pop'),
+  gens:  document.getElementById('gens'),
+  cxp:   document.getElementById('cxp'),
+  mutp:  document.getElementById('mutp'),
+  heat:  document.getElementById('heat'),
+  table: document.getElementById('table'),
+  res:   document.getElementById('results'),
+  mval:  document.getElementById('mval'),
+  pval:  document.getElementById('pval'),
+  gval:  document.getElementById('gval'),
+  cval:  document.getElementById('cval'),
+  uval:  document.getElementById('uval'),
+};
+
+function syncHints(){
+  els.mval.textContent = els.model.value;
+  els.pval.textContent = els.pop.value;
+  els.gval.textContent = els.gens.value;
+  els.cval.textContent = els.cxp.value;
+  els.uval.textContent = els.mutp.value;
+}
+['change','input'].forEach(ev=>{
+  [els.model,els.pop,els.gens,els.cxp,els.mutp].forEach(e=>e.addEventListener(ev,syncHints));
+});
+syncHints();
+
+let M=null, labels=null;
+
+async function init(){
+  M = await loadJSON('data/matrix.json');      // {genes, gsms, X}
+  labels = await loadJSON('data/labels.json');  // {labels}
+  drawHeat();
+  await refreshResults();
+}
+init();
+
+function drawHeat(){
+  const ctx = els.heat.getContext('2d');
+  const g = M.genes.length, s = M.gsms.length;
+  const W = els.heat.width = Math.max(900, s*10);
+  const H = els.heat.height = Math.max(260, g*10);
+  const cellW = W/s, cellH = H/g;
+
+  const flat = M.X.flat();
+  const lo = Math.min(...flat), hi = Math.max(...flat);
+  const scale = v => (v - lo)/(hi - lo + 1e-9);
+
+  ctx.clearRect(0,0,W,H);
+  for(let i=0;i<g;i++){
+    for(let j=0;j<s;j++){
+      const v = scale(M.X[i][j]);
+      // blue-white-red
+      const c = Math.round(v*255);
+      ctx.fillStyle = `rgb(${c},${Math.round(255*(1-Math.abs(v-0.5)*2))},${255-c})`;
+      ctx.fillRect(j*cellW, i*cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+  }
 }
 
-function getSelectedGenes(){
-  return Array.from(S("#genes").selectedOptions).map(o=>o.value).slice(0,50);
+function drawTable(){
+  const g = M.genes.length, s = M.gsms.length;
+  const header = `<tr><th>Gene \\ GSM</th>${M.gsms.map(x=>`<th>${x}</th>`).join('')}</tr>`;
+  const rows = [];
+  for(let i=0;i<g;i++){
+    const cells = M.X[i].map(v=>`<td>${v.toFixed(2)}</td>`).join('');
+    rows.push(`<tr><th>${M.genes[i]}</th>${cells}</tr>`);
+  }
+  els.table.innerHTML = `<div class="scroll"><table>${header}${rows.join('')}</table></div>`;
 }
 
-function pivot(selected){
-  // Xrows is [{gsm, G1, G2, ...}]
-  const gsm = Xrows.map(r=>r.gsm);
-  const Z = selected.map(g => Xrows.map(r => Number(r[g])));
-  return {gsm, Z};
+async function refreshResults(){
+  try {
+    const R = await loadJSON('data/results.json');
+    els.res.textContent = JSON.stringify(R, null, 2);
+  } catch(e){
+    els.res.textContent = '{}';
+  }
 }
 
-function showHeatmap(){
-  const sel = getSelectedGenes();
-  if(sel.length===0){ alert("Select 1–50 genes"); return; }
-  const {gsm, Z} = pivot(sel);
-  const lab = gsm.map(id => labels[id] || "NA");
-  const data=[{z:Z, x:gsm, y:sel, type:"heatmap", hoverongaps:false, zmin:-3, zmax:3}];
-  const layout={margin:{l:90,r:10,t:10,b:80}, xaxis:{tickangle:45}, yaxis:{automargin:true}};
-  Plotly.newPlot('heat', data, layout, {responsive:true});
-  S("#table").style.display = "none";
-}
-
-let dt=null;
-function showTable(){
-  const sel = getSelectedGenes();
-  const cols = ["gsm", ...sel];
-  const data = Xrows.map(r => cols.map(c => r[c]));
-  const columns = cols.map(c => ({title:c}));
-  S("#table").style.display = "table";
-  if(dt){dt.destroy();}
-  dt = new DataTable('#table', {data, columns, pageLength:25, scrollX:true});
-}
-
-S("#btnHeat").onclick = showHeatmap;
-S("#btnTable").onclick = showTable;
-loadData();
+document.getElementById('btn-heat').onclick = ()=>{
+  els.heat.classList.remove('hidden'); els.table.classList.add('hidden');
+  drawHeat();
+};
+document.getElementById('btn-table').onclick = ()=>{
+  els.table.classList.remove('hidden'); els.heat.classList.add('hidden');
+  drawTable();
+};
+document.getElementById('btn-refresh').onclick = refreshResults;
