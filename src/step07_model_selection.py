@@ -1,10 +1,8 @@
 # src/step07_model_selection.py
 from pathlib import Path
-import re, json
+import json
 import numpy as np
 import pandas as pd
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
@@ -21,19 +19,20 @@ except ImportError:
     from src.utils import read_matrix, save_fig
 
 
-# ---------- helpers ----------
-def _to_py(o):
-    if isinstance(o, (np.integer,)):   return int(o)
-    if isinstance(o, (np.floating,)):  return float(o)
-    if isinstance(o, (np.ndarray,)):   return o.tolist()
-    if isinstance(o, dict):            return {k: _to_py(v) for k,v in o.items()}
-    if isinstance(o, (list, tuple)):   return [_to_py(v) for v in o]
+# ---------- JSON-safe caster ----------
+def _np2py(o):
+    if isinstance(o, (np.integer,)):  return int(o)
+    if isinstance(o, (np.floating,)): return float(o)
+    if isinstance(o, (np.ndarray,)):  return o.tolist()
     return o
+
+
+# ---------- helpers ----------
 def _find_ga_genes_file(proc_dir: Path) -> Path:
-    # Prefer explicit newest ga_genes_k*.txt
-    cands = sorted(proc_dir.glob("ga_genes_k*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cands = sorted(proc_dir.glob("ga_genes_k*.txt"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
     if not cands:
-        raise FileNotFoundError("No ga_genes_k*.txt found in processed/. Run step06 first.")
+        raise FileNotFoundError("No ga_genes_k*.txt in processed/. Run step06 first.")
     return cands[0]
 
 def _load_ga_genes(proc_dir: Path, k_from_cfg: int | None = None) -> list[str]:
@@ -55,7 +54,6 @@ def _load_split(P, name):
     return df["gsm"].tolist(), df["label"].tolist()
 
 def _slice(X, y, gsms, genes_sel):
-    # keep selected genes present in X
     genes = [g for g in genes_sel if g in X.index]
     cols  = [c for c in gsms if c in X.columns]
     Xs = X.loc[genes, cols].T.values   # samples × genes
@@ -65,25 +63,24 @@ def _slice(X, y, gsms, genes_sel):
 def _estimator_and_grid(name: str, seed: int):
     name = (name or "logreg_l2").lower()
     if name in ("logreg", "logreg_l2"):
-        est = LogisticRegression(
-            penalty="l2", solver="lbfgs",
-            max_iter=4000, n_jobs=1, random_state=seed
-        )
+        est  = LogisticRegression(penalty="l2", solver="lbfgs",
+                                  max_iter=4000, n_jobs=1, random_state=seed)
         grid = {"C": [0.1, 0.5, 1.0, 3.0, 10.0]}
         return est, grid
     if name == "logreg_en":
-        est = LogisticRegression(
-            penalty="elasticnet", solver="saga",
-            l1_ratio=0.5, max_iter=4000, n_jobs=1, random_state=seed
-        )
-        grid = {"C": [0.1, 0.5, 1.0, 3.0], "l1_ratio": [0.1, 0.5, 0.9]}
+        # proper elastic net: use saga + penalty="elasticnet"
+        est  = LogisticRegression(penalty="elasticnet", solver="saga",
+                                  l1_ratio=0.5, max_iter=4000,
+                                  n_jobs=1, random_state=seed)
+        grid = {"C": [0.1, 0.5, 1.0, 3.0],
+                "l1_ratio": [0.1, 0.5, 0.9]}
         return est, grid
     if name == "linsvc":
-        est = LinearSVC(random_state=seed)
+        est  = LinearSVC(random_state=seed)
         grid = {"C": [0.1, 0.5, 1.0, 3.0, 10.0]}
         return est, grid
     if name == "rf":
-        est = RandomForestClassifier(n_jobs=1, random_state=seed)
+        est  = RandomForestClassifier(n_jobs=1, random_state=seed)
         grid = {"n_estimators": [200, 400, 800],
                 "max_depth": [None, 10, 20],
                 "max_features": ["sqrt", "log2"]}
@@ -93,13 +90,11 @@ def _estimator_and_grid(name: str, seed: int):
 def _proba_or_score(clf, X):
     if hasattr(clf, "predict_proba"):
         P = clf.predict_proba(X)
-        if P.ndim == 1:
-            P = np.stack([1 - P, P], axis=1)
+        if P.ndim == 1: P = np.stack([1 - P, P], axis=1)
         return P
     if hasattr(clf, "decision_function"):
         S = clf.decision_function(X)
-        if S.ndim == 1:
-            S = np.stack([-S, S], axis=1)
+        if S.ndim == 1: S = np.stack([-S, S], axis=1)
         e = np.exp(S - S.max(axis=1, keepdims=True))
         return e / e.sum(axis=1, keepdims=True)
     return None
@@ -107,9 +102,9 @@ def _proba_or_score(clf, X):
 def _eval(clf, X, y_true, labels_order):
     y_pred = clf.predict(X)
     out = {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-        "balanced_acc": float(balanced_accuracy_score(y_true, y_pred)),
+        "accuracy":      float(accuracy_score(y_true, y_pred)),
+        "f1_macro":      float(f1_score(y_true, y_pred, average="macro")),
+        "balanced_acc":  float(balanced_accuracy_score(y_true, y_pred)),
     }
     proba = _proba_or_score(clf, X)
     try:
@@ -121,8 +116,9 @@ def _eval(clf, X, y_true, labels_order):
             )
     except Exception:
         pass
-    cm = confusion_matrix(y_true, y_pred, labels=labels_order)
-    rep = classification_report(y_true, y_pred, labels=labels_order, zero_division=0, output_dict=True)
+    cm  = confusion_matrix(y_true, y_pred, labels=labels_order)
+    rep = classification_report(y_true, y_pred, labels=labels_order,
+                                zero_division=0, output_dict=True)
     return out, cm, rep
 
 def _plot_cm(cm, labels, title, out_png):
@@ -142,7 +138,6 @@ def _plot_cm(cm, labels, title, out_png):
 
 
 # ---------- entrypoint ----------
-
 def run(cfg, paths, model: str | None = None, **_):
     P = {k: Path(v) for k, v in paths.items()}
     labels_order = cfg["classes"]
@@ -164,19 +159,17 @@ def run(cfg, paths, model: str | None = None, **_):
 
     # model + grid
     model_name = model or cfg.get("model", "logreg_l2")
-    est, grid = _estimator_and_grid(model_name, seed)
-    scoring = cfg.get("ga", {}).get("scoring", "f1_macro")
-    cv_folds = int(cfg.get("model_cv_folds", cfg.get("ga", {}).get("cv_folds", 5)))
-    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    est, grid  = _estimator_and_grid(model_name, seed)
+    scoring    = cfg.get("ga", {}).get("scoring", "f1_macro")
+    cv_folds   = int(cfg.get("model_cv_folds", cfg.get("ga", {}).get("cv_folds", 5)))
+    cv         = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
 
     # grid search on train
-    gs = GridSearchCV(
-        est, grid, scoring=scoring, cv=cv, n_jobs=-1, refit=True, verbose=0
-    )
+    gs = GridSearchCV(est, grid, scoring=scoring, cv=cv, n_jobs=-1, refit=True, verbose=0)
     gs.fit(Xtr, ytr)
-    best = gs.best_estimator_
+    best        = gs.best_estimator_
     best_params = gs.best_params_
-    best_cv = float(gs.best_score_)
+    best_cv     = float(gs.best_score_)
 
     # evaluate on splits
     outdir = P["results"] / "model_selection"
@@ -185,24 +178,25 @@ def run(cfg, paths, model: str | None = None, **_):
     metrics = []
     for split_name, Xs, ys in [("train", Xtr, ytr), ("val", Xva, yva), ("test", Xte, yte)]:
         m, cm, rep = _eval(best, Xs, ys, labels_order)
-        m_rec = {"split": split_name, **m}
-        metrics.append(m_rec)
+        metrics.append({"split": split_name, **m})
         pd.DataFrame(cm, index=labels_order, columns=labels_order)\
           .to_csv(outdir / f"{model_name}_{split_name}_cm.tsv", sep="\t")
-        _plot_cm(cm, labels_order, f"{model_name} • {split_name}", outdir / f"{model_name}_{split_name}_cm.png")
+        _plot_cm(cm, labels_order, f"{model_name} • {split_name}",
+                 outdir / f"{model_name}_{split_name}_cm.png")
         with open(outdir / f"{model_name}_{split_name}_report.json", "w", encoding="utf-8") as f:
-            json.dump(_to_py(rep), f, indent=2)
+            json.dump(rep, f, indent=2, default=_np2py)
 
-    # optional: refit on train+val, eval on test again
+    # refit on train+val, eval on test
     Xtrva = np.vstack([Xtr, Xva])
     ytrva = np.concatenate([ytr, yva])
     best.fit(Xtrva, ytrva)
     m2, cm2, rep2 = _eval(best, Xte, yte, labels_order)
     pd.DataFrame(cm2, index=labels_order, columns=labels_order)\
       .to_csv(outdir / f"{model_name}_test_after_refit_cm.tsv", sep="\t")
-    _plot_cm(cm2, labels_order, f"{model_name} • test (refit tr+val)", outdir / f"{model_name}_test_after_refit_cm.png")
+    _plot_cm(cm2, labels_order, f"{model_name} • test (refit tr+val)",
+             outdir / f"{model_name}_test_after_refit_cm.png")
     with open(outdir / f"{model_name}_test_after_refit_report.json", "w", encoding="utf-8") as f:
-        json.dump(_to_py(rep2), f, indent=2)
+        json.dump(rep2, f, indent=2, default=_np2py)
 
     # predictions on test
     yhat = best.predict(Xte)
@@ -222,7 +216,7 @@ def run(cfg, paths, model: str | None = None, **_):
         "metrics": metrics,
         "test_after_refit": m2,
     }
-    (outdir / "summary.json").write_text(json.dumps(_to_py(summary), indent=2), encoding="utf-8")
+    (outdir / "summary.json").write_text(
+        json.dumps(summary, indent=2, default=_np2py), encoding="utf-8"
+    )
     return summary
-
-
