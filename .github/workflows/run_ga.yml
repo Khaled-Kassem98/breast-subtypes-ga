@@ -1,4 +1,5 @@
 name: run-ga
+
 on:
   workflow_dispatch:
     inputs:
@@ -16,11 +17,19 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with: { python-version: '3.10' }
-      - run: pip install -r requirements.txt
+
+      - name: Install deps
+        run: |
+          python -V
+          pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Download GEO
         run: |
@@ -46,25 +55,29 @@ jobs:
       - name: Run 01–07
         run: |
           python - <<'PY'
-          import json
+          import json, pathlib
           from src.utils import load_cfg
           import src.step01_reading_data as s1, src.step02_preprocessing as s2
           import src.step03_cohort as s3, src.step04_split as s4, src.step05_baseline as s5
           import src.step06_GA_feature_selection as s6, src.step07_model_selection as s7
           c = load_cfg('config.yaml'); P = c['paths']
-          r = {}
-          r["s1"]=s1.run(c,P); r["s2"]=s2.run(c,P); r["s3"]=s3.run(c,P); r["s4"]=s4.run(c,P); r["s5"]=s5.run(c,P)
-          r["s6"]=s6.run(c,P, k=300)  # keep K fixed for the site
-          r["s7"]=s7.run(c,P, model="${{ github.event.inputs.model }}")
-          print(json.dumps(r))
-          # write results for the site
-          import pathlib
+          R = {}
+          R["s1"]=s1.run(c,P); R["s2"]=s2.run(c,P); R["s3"]=s3.run(c,P)
+          R["s4"]=s4.run(c,P); R["s5"]=s5.run(c,P)
+          R["s6"]=s6.run(c,P, k=300)
+          R["s7"]=s7.run(c,P, model="${{ github.event.inputs.model }}")
           out = pathlib.Path("docs/data"); out.mkdir(parents=True, exist_ok=True)
-          (out/"results.json").write_text(json.dumps(r, indent=2))
+          (out/"results.json").write_text(json.dumps(R, indent=2))
           PY
 
-      - name: Export web JSON
+      - name: Build site data
         run: python tools/prepare_web.py
+
+      - name: Verify docs
+        run: |
+          ls -R docs
+          test -f docs/index.html
+          test -f docs/data/results.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
