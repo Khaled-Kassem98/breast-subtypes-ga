@@ -140,4 +140,6 @@ requirements.txt
 README.md
 ```
 
-If you use this, cite NCBI GEO series **GSE45827** and the Affymetrix **GPL570** platform annotation.
+Download family	Format
+SOFT formatted family file(s): https://ftp.ncbi.nlm.nih.gov/geo/series/GSE45nnn/GSE45827/soft/
+GPL570.annot.gz: https://ftp.ncbi.nlm.nih.gov/geo/platforms/GPLnnn/GPL570/soft/
